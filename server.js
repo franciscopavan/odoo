@@ -1,3 +1,6 @@
+
+Copiar
+
 const express = require('express');
 const fetch = require('node-fetch');
 const cors = require('cors');
@@ -25,13 +28,20 @@ app.post('/odoo/*', async (req, res) => {
       body: JSON.stringify(req.body)
     });
 
-    const setCookie = response.headers.get('set-cookie');
-    if (setCookie) {
-      const match = setCookie.match(/session_id=([^;]+)/);
-      if (match) res.setHeader('X-Session-Id', match[1]);
+    const data = await response.json();
+
+    // Extraer session_id de set-cookie y meterlo en el resultado
+    const rawCookies = response.headers.raw()['set-cookie'];
+    if (rawCookies) {
+      for (const cookie of rawCookies) {
+        const match = cookie.match(/session_id=([^;]+)/);
+        if (match && data.result) {
+          data.result._session_id = match[1];
+          break;
+        }
+      }
     }
 
-    const data = await response.json();
     res.json(data);
   } catch (err) {
     console.error('Proxy error:', err.message);
