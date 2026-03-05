@@ -8,45 +8,56 @@ const ODOO_URL = process.env.ODOO_URL || 'https://mundocharro.odoo.com';
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+// ── Proxy JSON-RPC (autenticacion clasica con contrasena) ──
 app.post('/odoo/*', async (req, res) => {
   const path = req.url.replace('/odoo/', '');
   const targetUrl = `${ODOO_URL}/${path}`;
   try {
     const headers = { 'Content-Type': 'application/json' };
-
-    // Pasar session_id si existe
     if (req.headers['x-session-id']) {
       headers['Cookie'] = `session_id=${req.headers['x-session-id']}`;
     }
-
-    // ✅ NUEVO: pasar API Key si viene en Authorization
     if (req.headers['authorization']) {
       headers['Authorization'] = req.headers['authorization'];
     }
-
     const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(req.body)
+      method: 'POST', headers, body: JSON.stringify(req.body)
     });
-
     const data = await response.json();
-
-    // Extraer session_id de set-cookie y meterlo en el resultado
     const rawCookies = response.headers.raw()['set-cookie'];
     if (rawCookies) {
       for (const cookie of rawCookies) {
         const match = cookie.match(/session_id=([^;]+)/);
-        if (match && data.result) {
-          data.result._session_id = match[1];
-          break;
-        }
+        if (match && data.result) { data.result._session_id = match[1]; break; }
       }
     }
-
     res.json(data);
   } catch (err) {
-    console.error('Proxy error:', err.message);
+    console.error('Proxy JSON-RPC error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Proxy REST API (con API Key) ──
+app.all('/api/*', async (req, res) => {
+  const path = req.url;
+  const targetUrl = `${ODOO_URL}${path}`;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (req.headers['authorization']) {
+      headers['Authorization'] = req.headers['authorization'];
+    }
+    const options = { method: req.method, headers };
+    if (req.method !== 'GET' && req.body) {
+      options.body = JSON.stringify(req.body);
+    }
+    const response = await fetch(targetUrl, options);
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch(e) { data = { error: text }; }
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('Proxy REST error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
