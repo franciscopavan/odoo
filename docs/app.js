@@ -55,12 +55,11 @@ function updatePrice() {
 // ══════════════════════════════════════════
 // API ODOO via PROXY — API Key vive en server.js
 // ══════════════════════════════════════════
-var _session = null;
 
 async function odooPost(path, body) {
   var cfg = getConfig();
   var headers = { 'Content-Type': 'application/json' };
-  if (_session) headers['X-Session-Id'] = _session;
+  // Eliminamos el reuso de sesion — la API Key autentica cada llamada
   headers['X-Odoo-User'] = cfg.user;
   var r = await fetch(PROXY + '/odoo' + path, {
     method: 'POST',
@@ -68,13 +67,9 @@ async function odooPost(path, body) {
     body: JSON.stringify(body)
   });
   var d = await r.json();
-  if (d.result && d.result._session_id) {
-    _session = d.result._session_id;
-    delete d.result._session_id;
-  }
+  // Ya no guardamos _session_id
   return d;
 }
-
 async function odooCall(model, method, args, kwargs) {
   var d = await odooPost('/web/dataset/call_kw', {
     jsonrpc: '2.0', method: 'call',
