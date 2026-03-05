@@ -1,7 +1,6 @@
 const express = require('express');
 const fetch = require('node-fetch');
 const cors = require('cors');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ODOO_URL = process.env.ODOO_URL || 'https://mundocharro.odoo.com';
@@ -12,11 +11,17 @@ app.use(express.json());
 app.post('/odoo/*', async (req, res) => {
   const path = req.url.replace('/odoo/', '');
   const targetUrl = `${ODOO_URL}/${path}`;
-
   try {
     const headers = { 'Content-Type': 'application/json' };
+
+    // Pasar session_id si existe
     if (req.headers['x-session-id']) {
       headers['Cookie'] = `session_id=${req.headers['x-session-id']}`;
+    }
+
+    // ✅ NUEVO: pasar API Key si viene en Authorization
+    if (req.headers['authorization']) {
+      headers['Authorization'] = req.headers['authorization'];
     }
 
     const response = await fetch(targetUrl, {
