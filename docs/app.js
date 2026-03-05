@@ -2,10 +2,7 @@
 // CONFIGURACION — sin secretos aqui
 // ══════════════════════════════════════════
 var PROXY = 'https://odoo-prueba.onrender.com';
-var DEFAULT_CFG = {
-  user: '',
-  price: 50
-};
+var DEFAULT_CFG = { user: '', price: 50 };
 
 function getConfig() {
   try {
@@ -53,23 +50,20 @@ function updatePrice() {
 }
 
 // ══════════════════════════════════════════
-// API ODOO via PROXY — API Key vive en server.js
+// API ODOO via PROXY
 // ══════════════════════════════════════════
-
 async function odooPost(path, body) {
   var cfg = getConfig();
   var headers = { 'Content-Type': 'application/json' };
-  // Eliminamos el reuso de sesion — la API Key autentica cada llamada
   headers['X-Odoo-User'] = cfg.user;
   var r = await fetch(PROXY + '/odoo' + path, {
     method: 'POST',
     headers: headers,
     body: JSON.stringify(body)
   });
-  var d = await r.json();
-  // Ya no guardamos _session_id
-  return d;
+  return await r.json();
 }
+
 async function odooCall(model, method, args, kwargs) {
   var d = await odooPost('/web/dataset/call_kw', {
     jsonrpc: '2.0', method: 'call',
@@ -82,11 +76,9 @@ async function odooCall(model, method, args, kwargs) {
   return d.result;
 }
 
-// ── CORREGIDO: ya no intenta autenticar con password vacio ──
 async function odooAuth() {
   var cfg = getConfig();
   if (!cfg.user) throw new Error('Configura tu correo en el boton Configuracion.');
-
   var d = await odooPost('/web/dataset/call_kw', {
     jsonrpc: '2.0', method: 'call',
     params: {
@@ -95,15 +87,8 @@ async function odooAuth() {
       kwargs: { fields: ['id'], limit: 1, context: {} }
     }
   });
-
   if (d.error) throw new Error('Error Odoo: ' + (d.error.data ? d.error.data.message : d.error.message));
   if (!d.result || d.result.length === 0) throw new Error('Usuario "' + cfg.user + '" no encontrado en Odoo.');
-
-  return d.result[0].id;
-}
-  if (d.error) throw new Error('Error de conexion con Odoo: ' + (d.error.data ? d.error.data.message : d.error.message));
-  if (!d.result || d.result.length === 0) throw new Error('Usuario "' + cfg.user + '" no encontrado en Odoo.');
-
   return d.result[0].id;
 }
 
