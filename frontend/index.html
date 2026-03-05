@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comedor Mundo Charro</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="header">
+  <div class="brand">MUNDO <span>CHARRO</span></div>
+  <div class="clock" id="clock">00:00</div>
+  <div class="menu-badge" id="menu-badge">Menu del dia - $50</div>
+</div>
+
+<!-- Input invisible para lector de barras -->
+<input type="text" id="barcode-input" autocomplete="off">
+
+<!-- ── Pantalla: Idle ── -->
+<div class="screen active" id="screen-idle">
+  <div class="scan-ring"><div class="scan-icon">&#128203;</div></div>
+  <div class="idle-title">ESCANEA TU CREDENCIAL</div>
+  <div class="idle-sub">Acerca tu identificacion al lector</div>
+  <div class="price-tag">
+    <div class="price-label">Menu del dia</div>
+    <div class="price-amount" id="display-price">$50</div>
+  </div>
+  <div id="not-configured-msg"></div>
+</div>
+
+<!-- ── Pantalla: Cargando ── -->
+<div class="screen" id="screen-loading">
+  <div class="loading-dots">
+    <div class="dot"></div>
+    <div class="dot"></div>
+    <div class="dot"></div>
+  </div>
+  <div class="loading-text">Verificando credencial...</div>
+</div>
+
+<!-- ── Pantalla: Exito ── -->
+<div class="screen" id="screen-success">
+  <div class="result-icon">&#10003;</div>
+  <div class="result-name" id="success-name">EMPLEADO</div>
+  <div class="result-msg">Buen provecho! Que disfrutes tu comida</div>
+  <div class="result-card success">
+    <div class="card-label">Saldo descontado</div>
+    <div class="card-value orange" id="success-charged">-$50</div>
+    <div class="card-label" style="margin-top:8px">Saldo restante</div>
+    <div class="card-value green" id="success-balance">$0</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progress1"></div></div>
+</div>
+
+<!-- ── Pantalla: Sin saldo ── -->
+<div class="screen" id="screen-no-balance">
+  <div class="result-icon">!</div>
+  <div class="result-name" id="nobal-name">EMPLEADO</div>
+  <div class="result-msg">Saldo insuficiente</div>
+  <div class="result-card warn-card">
+    <div class="card-label">Saldo actual</div>
+    <div class="card-value orange" id="nobal-balance">$0</div>
+    <div class="card-label" style="margin-top:8px">Se requiere</div>
+    <div class="card-value red" id="nobal-required">$50</div>
+  </div>
+  <div class="error-detail">Contacta a Recursos Humanos para recargar tu saldo</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress2"></div></div>
+</div>
+
+<!-- ── Pantalla: No encontrado ── -->
+<div class="screen" id="screen-not-found">
+  <div class="result-icon">X</div>
+  <div class="result-name">NO ENCONTRADO</div>
+  <div class="result-msg">Credencial no registrada en el sistema</div>
+  <div class="result-card error-card">
+    <div class="card-label">Codigo escaneado</div>
+    <div class="card-value red" id="notfound-code" style="font-size:24px">---</div>
+  </div>
+  <div class="error-detail">Contacta a Recursos Humanos</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress3"></div></div>
+</div>
+
+<!-- ── Pantalla: Error ── -->
+<div class="screen" id="screen-error">
+  <div class="result-icon">!</div>
+  <div class="result-name">SIN CONEXION</div>
+  <div class="result-msg">No se pudo conectar con Odoo</div>
+  <div class="result-card error-card">
+    <div class="card-label">Detalle del error</div>
+    <div class="card-value red" id="error-detail" style="font-size:18px;line-height:1.3">---</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progress4"></div></div>
+</div>
+
+<!-- ── Boton descargar registros ── -->
+<button class="excel-btn" onclick="abrirPinOverlay()">
+  &#128196; Descargar Registros <span class="badge" id="reg-count">0</span>
+</button>
+
+<!-- ── PIN Overlay ── -->
+<div class="pin-overlay" id="pin-overlay">
+  <div class="pin-box">
+    <div class="pin-title">&#128274; ACCESO RESTRINGIDO</div>
+    <div class="pin-sub">Ingresa el PIN de Recursos Humanos</div>
+    <div class="pin-dots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+      <div class="pin-dot" id="pd4"></div>
+      <div class="pin-dot" id="pd5"></div>
+      <div class="pin-dot" id="pd6"></div>
+      <div class="pin-dot" id="pd7"></div>
+    </div>
+    <input
+      type="password"
+      id="pin-input"
+      maxlength="8"
+      placeholder="Escribe tu PIN"
+      class="pin-input-field"
+      oninput="pinFromInput(this.value)"
+    >
+    <div class="pin-actions">
+      <button class="pin-btn" onclick="pinClear()">&#9003; Borrar</button>
+      <button class="pin-btn" onclick="closePinOverlay()">Cancelar</button>
+      <button class="pin-btn-confirm" onclick="pinConfirmar()">Confirmar</button>
+    </div>
+    <div class="pin-error" id="pin-error"></div>
+  </div>
+</div>
+
+<!-- ── Boton configuracion ── -->
+<button class="config-btn" onclick="openConfig()">Configuracion</button>
+
+<!-- ── Config Overlay ── -->
+<div class="config-overlay" id="config-overlay">
+  <div class="config-box">
+    <div class="config-title">CONFIGURACION</div>
+    <div class="config-field">
+      <label>Usuario (correo de Odoo)</label>
+      <input type="text" id="cfg-user" placeholder="admin@mundocharro.mx">
+    </div>
+    <div class="config-field">
+      <label>Precio del menu del dia ($)</label>
+      <input type="number" id="cfg-price" placeholder="50">
+    </div>
+    <div class="config-actions">
+      <button class="btn btn-secondary" onclick="closeConfig()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
+    </div>
+    <div class="config-status" id="config-status"></div>
+  </div>
+</div>
+
+<!-- ── Footer ── -->
+<div class="footer">
+  <div class="footer-text">
+    COMEDOR EMPLEADOS - MUNDO CHARRO - <span id="date-display"></span>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
