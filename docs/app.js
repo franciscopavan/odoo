@@ -101,6 +101,11 @@ async function odooAuth() {
     }
   });
 
+  if (d.error) throw new Error('Error Odoo: ' + (d.error.data ? d.error.data.message : d.error.message));
+  if (!d.result || d.result.length === 0) throw new Error('Usuario "' + cfg.user + '" no encontrado en Odoo.');
+
+  return d.result[0].id;
+}
   if (d.error) throw new Error('Error de conexion con Odoo: ' + (d.error.data ? d.error.data.message : d.error.message));
   if (!d.result || d.result.length === 0) throw new Error('Usuario "' + cfg.user + '" no encontrado en Odoo.');
 
