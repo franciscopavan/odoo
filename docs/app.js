@@ -61,7 +61,6 @@ async function odooPost(path, body) {
   var cfg = getConfig();
   var headers = { 'Content-Type': 'application/json' };
   if (_session) headers['X-Session-Id'] = _session;
-  // Solo enviamos el usuario, la API Key la agrega el servidor
   headers['X-Odoo-User'] = cfg.user;
   var r = await fetch(PROXY + '/odoo' + path, {
     method: 'POST',
@@ -88,9 +87,11 @@ async function odooCall(model, method, args, kwargs) {
   return d.result;
 }
 
+// ── CORREGIDO: ya no intenta autenticar con password vacio ──
 async function odooAuth() {
   var cfg = getConfig();
   if (!cfg.user) throw new Error('Configura tu correo en el boton Configuracion.');
+
   var d = await odooPost('/web/dataset/call_kw', {
     jsonrpc: '2.0', method: 'call',
     params: {
@@ -99,14 +100,11 @@ async function odooAuth() {
       kwargs: { fields: ['id'], limit: 1, context: {} }
     }
   });
-  if (d.result && d.result.length > 0) return d.result[0].id;
-  var auth = await odooPost('/web/session/authenticate', {
-    jsonrpc: '2.0', method: 'call',
-    params: { db: 'mundocharro', login: cfg.user, password: '' }
-  });
-  if (!auth.result || !auth.result.uid)
-    throw new Error('Autenticacion fallida. Verifica tu correo.');
-  return auth.result.uid;
+
+  if (d.error) throw new Error('Error de conexion con Odoo: ' + (d.error.data ? d.error.data.message : d.error.message));
+  if (!d.result || d.result.length === 0) throw new Error('Usuario "' + cfg.user + '" no encontrado en Odoo.');
+
+  return d.result[0].id;
 }
 
 // ══════════════════════════════════════════
@@ -326,7 +324,6 @@ function pinClear() {
   document.getElementById('pin-error').textContent = '';
 }
 
-// PIN se verifica en el servidor — nunca viaja de vuelta al frontend
 async function pinConfirmar() {
   try {
     var r = await fetch(PROXY + '/verify-pin', {
