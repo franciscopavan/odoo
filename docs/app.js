@@ -1,8 +1,7 @@
 // ══════════════════════════════════════════
 // CONFIGURACION — sin secretos aqui
 // ══════════════════════════════════════════
-var PROXY = 'https://odoo-ewzf.onrender.com';
-
+var PROXY = 'https://odoo-prueba.onrender.com';
 var DEFAULT_CFG = {
   user: '',
   price: 50
