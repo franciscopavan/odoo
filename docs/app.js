@@ -1,7 +1,8 @@
 // ══════════════════════════════════════════
-// CONFIGURACION — sin secretos aqui
+// CONFIGURACION
 // ══════════════════════════════════════════
 var PROXY = 'https://odoo-prueba.onrender.com';
+
 var DEFAULT_CFG = { user: '', price: 50 };
 
 function getConfig() {
@@ -11,27 +12,68 @@ function getConfig() {
   } catch(e) { return Object.assign({}, DEFAULT_CFG); }
 }
 
-function saveConfig() {
-  var cfg = {
-    user: document.getElementById('cfg-user').value.trim(),
-    price: parseFloat(document.getElementById('cfg-price').value) || 50
-  };
-  if (!cfg.user) {
+// Token temporal — nunca las credenciales reales
+function getToken() {
+  return sessionStorage.getItem('kiosco_token') || null;
+}
+function setToken(token) {
+  sessionStorage.setItem('kiosco_token', token);
+}
+function clearToken() {
+  sessionStorage.removeItem('kiosco_token');
+}
+
+// ══════════════════════════════════════════
+// CONFIGURACION — login verificado en servidor
+// ══════════════════════════════════════════
+async function saveConfig() {
+  var user     = document.getElementById('cfg-user').value.trim();
+  var password = document.getElementById('cfg-password').value.trim();
+  var price    = parseFloat(document.getElementById('cfg-price').value) || 50;
+
+  if (!user || !password) {
     document.getElementById('config-status').innerHTML =
-      '<span style="color:var(--error)">Completa el usuario</span>';
+      '<span style="color:var(--error)">Completa usuario y contraseña</span>';
     return;
   }
-  localStorage.setItem('kiosco_v2', JSON.stringify(cfg));
+
   document.getElementById('config-status').innerHTML =
-    '<span style="color:var(--success)">Guardado correctamente</span>';
-  updatePrice();
-  setTimeout(closeConfig, 1200);
+    '<span style="color:var(--gray)">Verificando...</span>';
+
+  try {
+    var r = await fetch(PROXY + '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, password, precio: price })
+    });
+    var data = await r.json();
+
+    if (!data.ok) {
+      document.getElementById('config-status').innerHTML =
+        '<span style="color:var(--error)">' + (data.message || 'Credenciales incorrectas') + '</span>';
+      return;
+    }
+
+    // Guardar token temporal y precio — nunca la contraseña
+    setToken(data.token);
+    localStorage.setItem('kiosco_v2', JSON.stringify({ user, price }));
+
+    document.getElementById('config-status').innerHTML =
+      '<span style="color:var(--success)">Acceso concedido</span>';
+    updatePrice();
+    setTimeout(closeConfig, 1200);
+
+  } catch(e) {
+    document.getElementById('config-status').innerHTML =
+      '<span style="color:var(--error)">Error de conexion con el servidor</span>';
+  }
 }
 
 function openConfig() {
   var cfg = getConfig();
-  document.getElementById('cfg-user').value = cfg.user;
-  document.getElementById('cfg-price').value = cfg.price;
+  document.getElementById('cfg-user').value = cfg.user || '';
+  document.getElementById('cfg-password').value = '';
+  document.getElementById('cfg-price').value = cfg.price || 50;
   document.getElementById('config-status').innerHTML = '';
   document.getElementById('config-overlay').classList.add('open');
 }
@@ -50,18 +92,25 @@ function updatePrice() {
 }
 
 // ══════════════════════════════════════════
-// API ODOO via PROXY
+// API ODOO via PROXY — usa token temporal
 // ══════════════════════════════════════════
 async function odooPost(path, body) {
-  var cfg = getConfig();
-  var headers = { 'Content-Type': 'application/json' };
-  headers['X-Odoo-User'] = cfg.user;
+  var token = getToken();
   var r = await fetch(PROXY + '/odoo' + path, {
     method: 'POST',
-    headers: headers,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Kiosco-Token': token || ''
+    },
     body: JSON.stringify(body)
   });
-  return await r.json();
+  var d = await r.json();
+  // Si el token expiró, limpiar y pedir relogin
+  if (r.status === 401) {
+    clearToken();
+    throw new Error('Sesion expirada. Ve a Configuracion y vuelve a iniciar sesion.');
+  }
+  return d;
 }
 
 async function odooCall(model, method, args, kwargs) {
@@ -76,22 +125,6 @@ async function odooCall(model, method, args, kwargs) {
   return d.result;
 }
 
-async function odooAuth() {
-  var cfg = getConfig();
-  if (!cfg.user) throw new Error('Configura tu correo en el boton Configuracion.');
-  var d = await odooPost('/web/dataset/call_kw', {
-    jsonrpc: '2.0', method: 'call',
-    params: {
-      model: 'res.users', method: 'search_read',
-      args: [[['login', '=', cfg.user]]],
-      kwargs: { fields: ['id'], limit: 1, context: {} }
-    }
-  });
-  if (d.error) throw new Error('Error Odoo: ' + (d.error.data ? d.error.data.message : d.error.message));
-  if (!d.result || d.result.length === 0) throw new Error('Usuario "' + cfg.user + '" no encontrado en Odoo.');
-  return d.result[0].id;
-}
-
 // ══════════════════════════════════════════
 // FLUJO PRINCIPAL
 // ══════════════════════════════════════════
@@ -101,10 +134,11 @@ var bufTimer = null;
 
 async function processBarcode(barcode) {
   if (processing || !barcode || barcode.length < 3) return;
-  var cfg = getConfig();
-  if (!cfg.user) {
+
+  var token = getToken();
+  if (!token) {
     document.getElementById('not-configured-msg').innerHTML =
-      '<div class="not-configured">Configura tu correo en el boton Configuracion</div>';
+      '<div class="not-configured">Inicia sesion en Configuracion primero</div>';
     return;
   }
 
@@ -112,10 +146,7 @@ async function processBarcode(barcode) {
   showScreen('loading');
 
   try {
-    await odooAuth();
-
-    var partnerId = parseInt(barcode);
-
+    var partnerId  = parseInt(barcode);
     var partnerData = await odooCall('res.partner', 'read', [[partnerId]], {
       fields: ['id', 'name']
     });
@@ -126,6 +157,8 @@ async function processBarcode(barcode) {
     }
 
     var empName = partnerData[0].name;
+    var cfg     = getConfig();
+    var price   = cfg.price;
 
     var wallets = await odooCall('loyalty.card', 'search_read',
       [[['partner_id', '=', partnerId], ['program_id.name', 'ilike', 'monedero']]],
@@ -133,7 +166,7 @@ async function processBarcode(barcode) {
     );
 
     if (!wallets || wallets.length === 0) {
-      var firstName = empName.split(' ')[0];
+      var firstName  = empName.split(' ')[0];
       var allPartners = await odooCall('res.partner', 'search_read',
         [[['name', 'ilike', firstName]]],
         { fields: ['id', 'name'], limit: 20 }
@@ -144,7 +177,7 @@ async function processBarcode(barcode) {
           { fields: ['id', 'points', 'program_id'], limit: 5 }
         );
         if (wTest && wTest.length > 0) {
-          wallets = wTest;
+          wallets  = wTest;
           partnerId = allPartners[pi].id;
           break;
         }
@@ -162,7 +195,6 @@ async function processBarcode(barcode) {
 
     var balance = wallets.length > 0 ? wallets[0].points : 0;
     var cardId  = wallets.length > 0 ? wallets[0].id    : null;
-    var price   = cfg.price;
 
     if (balance < price) {
       document.getElementById('nobal-name').textContent = empName.split(' ')[0].toUpperCase();
@@ -236,7 +268,9 @@ document.addEventListener('keypress', function(e){
 });
 
 document.addEventListener('click', function(){
-  if (!document.getElementById('config-overlay').classList.contains('open'))
+  var configAbierto = document.getElementById('config-overlay').classList.contains('open');
+  var pinAbierto    = document.getElementById('pin-overlay').classList.contains('open');
+  if (!configAbierto && !pinAbierto)
     document.getElementById('barcode-input').focus();
 });
 
@@ -265,7 +299,7 @@ function guardarRegistro(nombre, codigo, descontado, saldoRestante) {
 }
 
 // ══════════════════════════════════════════
-// PIN — verificado en el servidor
+// PIN — verificado en servidor
 // ══════════════════════════════════════════
 var _pinBuffer = '';
 
@@ -327,26 +361,25 @@ async function pinConfirmar() {
       actualizarPinDots();
     }
   } catch(e) {
-    document.getElementById('pin-error').textContent = 'Error de conexion. Intenta de nuevo.';
+    document.getElementById('pin-error').textContent = 'Error de conexion.';
   }
 }
 
 function descargarExcel() {
   if (_registros.length === 0) return;
-  var BOM = '\uFEFF';
+  var BOM  = '\uFEFF';
   var headers = ['Fecha','Hora','Nombre','Codigo Credencial','Turno','Saldo Descontado','Saldo Restante'];
   var rows = _registros.map(function(r) {
     return [r.fecha, r.hora, r.nombre, r.codigo, r.turno, r.descontado, r.saldo]
       .map(function(v){ return '"' + String(v).replace(/"/g,'""') + '"'; })
       .join(',');
   });
-  var csv = BOM + headers.join(',') + '\n' + rows.join('\n');
+  var csv  = BOM + headers.join(',') + '\n' + rows.join('\n');
   var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   var url  = URL.createObjectURL(blob);
   var a    = document.createElement('a');
-  var hoy  = new Date().toLocaleDateString('es-MX').replace(/\//g,'-');
-  a.href = url;
-  a.download = 'Comedor_MundoCharro_' + hoy + '.csv';
+  a.href   = url;
+  a.download = 'Comedor_MundoCharro_' + new Date().toLocaleDateString('es-MX').replace(/\//g,'-') + '.csv';
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -356,9 +389,8 @@ function descargarExcel() {
 // ══════════════════════════════════════════
 function tick() {
   var n = new Date();
-  var h = String(n.getHours()).padStart(2,'0');
-  var m = String(n.getMinutes()).padStart(2,'0');
-  document.getElementById('clock').textContent = h + ':' + m;
+  document.getElementById('clock').textContent =
+    String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0');
   var days   = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
   var months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   document.getElementById('date-display').textContent =
@@ -369,8 +401,7 @@ setInterval(tick, 1000); tick();
 // ── Init ──
 updatePrice();
 document.getElementById('barcode-input').focus();
-var _initCfg = getConfig();
-if (!_initCfg.user) {
+if (!getToken()) {
   document.getElementById('not-configured-msg').innerHTML =
-    '<div class="not-configured">Falta configurar tu correo. Haz clic en Configuracion</div>';
+    '<div class="not-configured">Inicia sesion en Configuracion para activar el kiosco</div>';
 }
