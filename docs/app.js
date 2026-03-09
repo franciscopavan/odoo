@@ -105,7 +105,6 @@ async function odooPost(path, body) {
     body: JSON.stringify(body)
   });
   var d = await r.json();
-  // Si el token expiró, limpiar y pedir relogin
   if (r.status === 401) {
     clearToken();
     throw new Error('Sesion expirada. Ve a Configuracion y vuelve a iniciar sesion.');
@@ -146,44 +145,30 @@ async function processBarcode(barcode) {
   showScreen('loading');
 
   try {
-    var partnerId  = parseInt(barcode);
-    var partnerData = await odooCall('res.partner', 'read', [[partnerId]], {
-      fields: ['id', 'name']
-    });
+    var cfg   = getConfig();
+    var price = cfg.price;
 
-    if (!partnerData || partnerData.length === 0 || !partnerData[0]) {
+    // ── Buscar contacto por código de barras ──
+    var partnerData = await odooCall('res.partner', 'search_read',
+      [[['barcode', '=', barcode]]],
+      { fields: ['id', 'name'], limit: 1 }
+    );
+
+    if (!partnerData || partnerData.length === 0) {
       document.getElementById('notfound-code').textContent = barcode;
       showScreen('not-found'); autoReturn('progress3', 4000); return;
     }
 
-    var empName = partnerData[0].name;
-    var cfg     = getConfig();
-    var price   = cfg.price;
+    var partnerId = partnerData[0].id;
+    var empName   = partnerData[0].name;
 
+    // ── Buscar monedero del empleado ──
     var wallets = await odooCall('loyalty.card', 'search_read',
       [[['partner_id', '=', partnerId], ['program_id.name', 'ilike', 'monedero']]],
       { fields: ['id', 'points', 'program_id'], limit: 10 }
     );
 
-    if (!wallets || wallets.length === 0) {
-      var firstName  = empName.split(' ')[0];
-      var allPartners = await odooCall('res.partner', 'search_read',
-        [[['name', 'ilike', firstName]]],
-        { fields: ['id', 'name'], limit: 20 }
-      );
-      for (var pi = 0; pi < allPartners.length; pi++) {
-        var wTest = await odooCall('loyalty.card', 'search_read',
-          [[['partner_id', '=', allPartners[pi].id], ['program_id.name', 'ilike', 'monedero']]],
-          { fields: ['id', 'points', 'program_id'], limit: 5 }
-        );
-        if (wTest && wTest.length > 0) {
-          wallets  = wTest;
-          partnerId = allPartners[pi].id;
-          break;
-        }
-      }
-    }
-
+    // Fallback: cualquier tarjeta de lealtad del contacto
     if (!wallets || wallets.length === 0) {
       wallets = await odooCall('loyalty.card', 'search_read',
         [[['partner_id', '=', partnerId]]],
